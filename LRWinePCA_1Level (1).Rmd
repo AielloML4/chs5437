@@ -1,0 +1,162 @@
+---
+title: "LR Wine One-Level Normal Distribution"
+author: "MSigman"
+date: "January 29, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Read the Data
+
+Read the wine data and examine the first five lines of the file. Note that the magnitude of the feature values are considerably different. Also look at the 
+
+
+```{r echo=T, warning=F , message=F}
+dat <- read.table("WineData.csv", sep=",", header=T)
+head(dat)
+
+```
+
+## Data Pretreatment
+
+Perform a pretreatment of the data by principal components analysis, with centering of the data and scaling each feature by it's variance (autoscaling the data). Save the principal components analysis (PCA) results in a variable called "pca". After the PCA, generate a scree plot, which is a plot of the eigenvalues against the principal component number. From this plot we will choose to keep a number of principal components that have an eigenvalue greater than 1. This method works when we autoscale the data. Otherwise, we can choose to keep a number of principal components that preserve a specific amount of the overall variance, or look for the break in the scree plot and choose the number of principal components equal to the breaking point. 
+
+```{r echo=T, warning=F , message=F}
+pca <- prcomp(dat[,2:14],center=T,scale. =T)
+plot(pca)
+abline(h=1)
+```
+
+Next, we will print a summary of the PCA results, followed by a pairwise comparison of the scores from the first three principal components, coloring each point by the class designation in the wine file. From the summary output, we see that keeping the first three principal components accounts for approximately 66% of the cumulative variance. From the plot, we see that the scores group the wine classes fairly well and we can anticipate developing a model that does a good job of classifying the wines.
+
+
+```{r echo=T, warning=F , message=F}
+summary(pca)
+pairs(pca$x[,1:3], col=dat$Class)
+```
+
+Having chosen to keep only three principal components, we will generate our pca model again, keeping only the three principal components corresponding to the largest eigenvalues (i.e., the greatest amount of variance).
+
+```{r echo=T, warning=F , message=F}
+pca <- prcomp(dat[,2:14],center=T,scale. =T, rank.=3)
+summary(pca)
+pairs(pca$x[,1:3], col=dat$Class)
+```
+
+## Make a Two Class Problem
+
+We will convert this three class problem into a two class problem and develop a likelihood ratio method for classifying the wine data. We will select the original wine class 2 as our "positive class" (designated with the new class number as 1) and all of the other original classes will be our "negtive class" (designated with the new class number as 0). We will generate a vector called myClass to store the new class information. We will then build a new dataframe called dat2, which contains the class designations from myClass and the scores from the first 3 principal components. This is an example how we will form our new data matrices upon which we will build our likelihood ratio models for cross validation. We use the pairs command to examine the data in first 3 Princial component scores as a pairwise plot. 
+
+```{r echo=T, warning=F , message=F}
+# Make this a two class problem - Class 2 versus all others.
+# Set Class A designation as 1 (our positive state) and all others as Class 0
+A <- 2
+myClass <- rep(0,dim(dat)[1])
+myClass[which(dat$Class==A)] <- 1
+
+# Make new dataset with myClass and scores 1:3
+dat2 <- data.frame(Class=myClass,pca$x[,1:3])
+head(dat2)
+pairs(pca$x[,1:3], pch=15, col=dat2$Class+1)
+
+```
+
+## Build the Likelihood Ratio Model and Cross Validate
+In the following code, we first combine our classes defined in myClass with the original features in the wine data to generate a dataframe called dat3. We will use dat3 to perform the stratified 10-fold cross validation. In each fold of the cross validation, we withhold 10% of the data to test the model and use the remaining 90% to generate the model. In this case, generating the model involves performing principal components analysis on the training data (90%) and using the resulting scores to calculate the between-object variance and covariance matrices for our new class 1 and class 0 wines. We also calculate the mean feature vectors for our new class 1 and class 0 wines. Having these values in hand, it is possible to calculate the numerator and denominator of the likelihood ratio for the samples in the testing data. To reiterate and be clear - we are using the data in the training set as a database from which we can calculate the variances, covariances and mean feature vectors. These are the values that we need to calculate the likelihood ratios for the wine data in the testing dataset. As we step through the 10-fold cross validation, we track the predicted LR in tstprediction and the ground truth for the test samples in tstGT. 
+
+```{r echo=T, warning=F , message=F}
+# follow previous wine example to calculate LR using 10-fold cross validation
+###############################################
+dat3 <- data.frame(Class=myClass, dat[,2:14])
+# 10-fold stratified 10% CV 
+require(dismo) # for n-fold calculation
+folds <- kfold(dat3, k=10, by=dat3$Class)
+source("UC1levelFunction012818.R")
+set.seed(88)
+#Make a variable to collect the ground truth and one to collect the predicted p(Class1)
+tstGT <- 99
+tstprediction <- 99
+# generate a for() control structure to loop through the n-CV folds
+for(i in 1:10){
+  #get training and test data
+  wtrain <- dat3[folds!=i,]
+  wtest <- dat3[folds==i,]
+  # Perform PCA on wtrain, keep 3PCs
+  pca <- prcomp(wtrain[,2:14],center=T,scale. =T, rank.=3)
+  # Add Class information 
+  pca.trn <- data.frame(Class=wtrain$Class, pca$x) #[,1:3]
+  pca.trn.split <- split(pca.trn, pca.trn$Class)
+  C1 <- UC1(pca.trn.split[[2]],c(2:4))
+  mn1 <- apply(pca.trn.split[[2]][,2:4],2,mean)
+  C0 <- UC1(pca.trn.split[[1]],c(2:4))
+  mn0 <- apply(pca.trn.split[[1]][,2:4],2,mean)
+  # This is one-level data, so calculate LR for all test data
+  # Project wtest into pca space to get scores
+  tst <- predict(pca, wtest)     #[,1:3]
+  tst <- data.frame(Class=wtest$Class, tst)
+  
+  for(j in 1:dim(tst)[1]){
+    n<- (det(C1))^-0.5*exp(-0.5*(as.matrix(tst[j,2:4] - mn1))%*%solve(C1)%*%t(as.matrix(tst[j,2:4] - mn1)))
+    d<- (det(C0))^-0.5*exp(-0.5*(as.matrix(tst[j,2:4] - mn0))%*%solve(C0)%*%t(as.matrix(tst[j,2:4] - mn0)))
+
+    tstprediction <- c(tstprediction , n/d ) 
+    tstGT <- c(tstGT, tst$Class[j])
+  }
+
+}
+
+
+```
+
+
+## Examine the Model Performance by ROC Analysis
+
+We begin by removing the first value (99) in the tstprediction and tstGT vectors. We then transform the likelihood ratios in the tstprediction vector to the log base 10 values. The remaining code uses the ROCR library to calculate the true positive rates and false positive rates and generate the ROC curve. The area under the curve is also calculated.
+
+```{r echo=T, warning=F , message=F}
+# Now remove the first value in each of the tstGT and tstprediction vectors (i.e., remove the 99 from position 1)
+tstGT <- tstGT[-1]
+tstprediction <- tstprediction[-1]
+# The predictions are probability that a sample belongs to wClass ==1
+# Convert the predictions to log10(prediction/(1-prediction)), which is the LLR
+tstprediction <- log10(tstprediction)
+
+#ROCR Curve
+library(ROCR)
+ROCRpred <- prediction(tstprediction, tstGT)
+ROCRperf <- performance(ROCRpred, 'tpr','fpr')
+plot(ROCRperf,downsampling=1, colorize = TRUE, print.cutoffs.at = c(-4,-2,-1,0,1,2,4),text.adj=c(-.5,.5), lwd = 4, cex.axis=2, cex.lab=1.25, cex=2, lty=2)
+abline(0,1, lty=1,lwd=1,col="red")
+abline(1,-1,lty=3,lwd=1,col="blue")
+
+auc.ROCperf = performance(ROCRpred, measure = "auc")
+auc <- c(unlist(auc.ROCperf@y.values))
+
+auc
+
+
+```
+
+## Additional Performance Metrics
+
+Here are a few more plots that serve as important metrics that characterize the performance of the likelihood ratio model. We will discuss these performance later in the semester, but they are included here to demonstrate how to source the functions and pass the data from the cross validation to the functions.
+
+
+```{r echo=T , warning=F, message=F}
+
+source("ECE_function.R")
+source("DET_function.R")
+source("Tippett_function.R")
+#source("histogram_function.R")
+h1 <- tstprediction[which(tstGT==1)]
+h2 <- tstprediction[which(tstGT==0)]
+ECE_plot(as.matrix(10^h1),as.matrix(10^h2),"")
+DET_plot(as.matrix(10^h1),as.matrix(10^h2),"")
+Tippett_plot(as.matrix(10^h1),as.matrix(10^h2),"")
+#histograms(as.matrix(10^h1),as.matrix(10^h2))
+
+```
+
