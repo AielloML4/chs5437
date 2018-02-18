@@ -1,0 +1,148 @@
+install.packages("rmarkdown")---
+title: "Multivariate Variance/Covariance"
+author: "MSigman"
+date: "January 28, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Generate Sample Two level Data
+
+The following code generates a simple dataset for this demonstration.
+
+```{r echo=T, warning=F}
+Run = c(1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4)
+Rep = c(1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3)
+Value = c(9.85, 9.95, 10, 9.9, 8.8, 9.5, 11.2, 11.1, 9.8, 9.7, 10.1, 10)
+Value2 = c(8.85, 9.95, 11, 9.9, 7.8, 9.5, 12.2, 11.1, 9.8, 9.7, 10.1, 10)
+Value3 = c(10.85, 8.95, 13, 9.7, 7.9, 9.2, 14.2, 10.1, 6.8, 9.9, 10.3, 11)
+mydat <- data.frame(obj=Run, Meas=Rep, value=Value, value2=Value2, value3=Value3)  
+mydat
+
+```
+
+## Calculating U-hat and C-hat for Two-Level Data
+
+The following is a simple R function that generates the within-object (U-hat) and between-object (C-hat) variance matrices. The function accepts a data frame with one column "obj" containing a unique indicator for each object. A column of measurement indicators is useful for understanding the data, but not necessary for the calculation. It is assumed that the same number of measurements are made on each object. The data used for this example also contains a column titled "class", which can also be useful in understanding the data, but the information is not used in the calculation. The function also accepts a vector giving the columns corresponding to the variables to be used in the calculation. All variables need not be used.
+
+```{r echo=T, warning=F}
+# function UC2
+# Accepts a data.frame, with colum of items named "Obj",
+# Each item should have the same designation
+# The number of repeated measurements (2 way data) for each item should be equal
+# Returns a list with U and C
+UC2 <- function(dat, variables){
+  ##Calculate U
+  dat.obj <- split(dat,dat$obj)
+  # create matrix pxp variables
+  sw <- matrix(0, nrow=length(variables), ncol=length(variables))
+  for(i in 1:length(dat.obj)){
+    mn <- apply(dat.obj[[i]][,variables],2,mean)
+    for(j in 1:dim(dat.obj[[i]])[1]){
+      sw<- sw+ as.matrix(t(dat.obj[[i]][j,variables]-mn))%*%as.matrix(dat.obj[[i]][j,variables]-mn)
+    }
+  }
+  u <- sw/(length(dat.obj)*(dim(dat.obj[[1]])[1]-1))
+  u
+  
+  # Calc C
+  # create sstar
+  sstar <- matrix(0, nrow=length(variables), ncol=length(variables))
+  xbar <- apply(dat[,variables],2,mean)
+  for(i in 1:length(dat.obj)){
+    mn <- apply(dat.obj[[i]][,variables],2,mean)
+    sstar <- sstar+as.matrix(mn-xbar)%*%t(as.matrix(mn-xbar))
+  }
+  #sstar
+  c <- sstar/(length(dat.obj)-1)-sw/(length(dat.obj)*dim(dat.obj[[1]])[1]*(dim(dat.obj[[1]])[1]-1))
+  c
+  
+  return(list(U=u, C=c))
+}
+
+```
+
+## Using the Function
+
+To use the function, you must first load the file using a "source" command. The file name is "UC2levelFunction012718.r"
+
+```{r echo=T, warning=F}
+ source("UC2levelFunction012718.R")
+```
+
+The next step is simply to call the function, sending the two objects required. Assign the calculated values to a variable. Here the calculated values are assigned to the variable z, which is a "list", as dictated by the return command.
+
+```{r echo=T, warning=F}
+ z <- UC2(mydat, c(3,4))
+ z
+```
+
+## Generate Sample One Level Data
+
+One level data does not contain repeat measurements for each object. Therefore, we cannot calculate within-object vairations. For this example, we will use the following data.
+
+```{r echo=T, warning=F}
+Run = c(1:12)
+Value = c(9.85, 9.95, 10, 9.9, 8.8, 9.5, 11.2, 11.1, 9.8, 9.7, 10.1, 10)
+Value2 = c(8.85, 9.95, 11, 9.9, 7.8, 9.5, 12.2, 11.1, 9.8, 9.7, 10.1, 10)
+Value3 = c(10.85, 8.95, 13, 9.7, 7.9, 9.2, 14.2, 10.1, 6.8, 9.9, 10.3, 11)
+mydat <- data.frame(obj=Run, value=Value, value2=Value2, value3=Value3)  
+
+mydat
+```
+
+## Calculating C-hat for One-Level Data
+
+The following code defines a function for calculating the variance/covariance matrix for one-level data. Note that there is a built-in function in R for calculating C-hat.
+
+```{r echo=T, warning=F}
+# function UC1
+# Accepts a data.frame containing single measurement data for multiple objects,
+# Returns C
+### NOTE - This gives the same result as the R function var()
+### In this case the command would be var(dat[,variables])
+#
+UC1 <- function(dat, variables){
+  sstar <- matrix(0, nrow=length(variables), ncol=length(variables))
+  xbar <- apply(dat[,variables],2,mean)
+  for(i in 1:dim(dat)[1]){
+    sstar <- sstar+t(as.matrix(dat[i,variables]-xbar))%*%(as.matrix(dat[i,variables]-xbar))
+  }
+  #sstar
+  c <- sstar/(dim(dat)[1]-1)
+  c
+  
+  return(c)
+}
+
+```
+
+## Using the Function
+
+To use the function, you must first load the file using a "source" command. The file name is "UC1levelFunction012818.r"
+
+```{r echo=T, warning=F}
+ source("UC1levelFunction012818.R")
+```
+
+The next step is simply to call the function, sending the two objects required. Assign the calculated values to a variable. Here the calculated values are assigned to the variable z, which is a "list", as dictated by the return command.
+
+```{r echo=T, warning=F}
+ z <- UC1(mydat, c(2:4))
+ z
+```
+
+## Use the R Function
+
+Let's repeat the calculation with the built-in function
+
+```{r echo=T, warning=F}
+
+z <- var(mydat[,c(2:4)])
+z
+```
+
+You may often find that there are different ways to accomplish a calculation in R. Any method that is statistically correct and leads to the correct answer is acceptable.
